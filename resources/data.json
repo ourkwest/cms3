@@ -1,0 +1,49 @@
+{
+
+  "filters": [
+    {
+      "Theme": [
+        ["All", "all"],
+        ["Orange", "orange"]
+      ],
+      "Category": [
+        ["All", "all"],
+        ["Bride", "bride"]
+      ]
+    }
+  ],
+
+  "portfolio": [
+    {"label": "div2014.png"},
+    {"client": "bob"},
+    {"label": "div2013.png"},
+    {"label": "div2012.png"},
+    {"label": "div2011.png"},
+    {"label": "div2010.png"},
+    {"label": "div2009.png"},
+    {"label": "div2008.png"},
+    {"label": "div2007.png"},
+    {"label": "divOlder.png"}
+  ],
+
+  "clients": [
+    {
+      "bob": {
+        "title": "Wedding Dress for Bob.",
+        "thumbnail": "bobtt.jpg",
+        "filters": ["men", "orange", "dupion", "silk"],
+        "photographer": ["Larry", "www.larry.com"],
+        "description": "<p>Here is some text.</p>",
+        "pages": [
+          {
+            "filename": "bob1.html",
+            "image": "bob1.jpg",
+            "photographer": true,
+            "description": "<p>Here is some more text.</p>"
+          }
+        ]
+      }
+    }
+  ]
+
+}
