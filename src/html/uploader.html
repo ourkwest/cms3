@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>S3 Access Test</title>
+
+    <style>
+
+        html {
+            font-family: verdana;
+        }
+
+        .top {
+            border: 1px solid blue;
+            background-color: lightblue;
+            padding: 5px;
+            margin: 2px;
+        }
+        .menu {
+            border: 1px solid green;
+            background-color: lightgreen;
+            padding: 5px;
+            margin: 2px;
+        }
+        #container {
+            border: 1px solid sandybrown;
+            background-color: yellow;
+            padding: 5px;
+            margin: 2px;
+        }
+
+        #log {
+            border: 1px solid gray;
+            background-color: lightgray;
+            padding: 5px;
+            margin: 2px;
+            color: gray;
+            font-size: smaller;
+        }
+
+        #hiddenDiv {
+            visibility: hidden;
+        }
+
+        .spaced {
+            margin: 2px;
+        }
+
+        canvas {
+            /*border: 1px solid black;*/
+        }
+    </style>
+
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.0.22.min.js"></script>
+
+    <script>
+
+        function log(userMessage, consoleMessage) {
+            if (userMessage) {
+                addElement("log", "span", false, {}, prepend).innerHTML = userMessage + "<br/>";
+                console.log(userMessage);
+            }
+            if (consoleMessage) {
+                console.log(consoleMessage);
+            }
+        }
+
+        var s3;
+        var bucketContents;
+
+        function listWholeBucket(s3, bucketName) {
+            bucketContents = {};
+            listBucket(s3, bucketName, "",
+                    function(key) {
+                        bucketContents[key] = true;
+                    },
+                    function() {
+                        document.getElementById('credentialSpan').style.color = "green";
+                        log("Listed bucket successfully.", bucketContents);
+                    },
+                    function(error) {
+                        document.getElementById('credentialSpan').style.color = "orange";
+                        log("ERROR listing bucket.", error);
+                    }
+            );
+        }
+
+        function listBucket(s3, bucketName, marker, onEach, onSuccess, onFailure) {
+            s3.listObjects({Bucket: bucketName, Marker: marker}, function (error, data) {
+                if (error) {
+                    onFailure(error);
+                } else {
+                    log("Successfully listed " + data.Contents.length + " items.");
+                    var lastKey = "";
+                    if (data.Contents.length > 0) {
+                        for (var i = 0; i < data.Contents.length; i++) {
+                            onEach(data.Contents[i].Key);
+                            lastKey = data.Contents[i].Key;
+                        }
+                    }
+                    if (data.IsTruncated) {
+                        listBucket(s3, bucketName, lastKey, onEach, onSuccess, onFailure);
+                    }
+                    else {
+                        onSuccess();
+                    }
+                }
+            });
+        }
+
+        function handleCredentialSelect(element) {
+            var files = element.files; // FileList object
+            var reader = new FileReader();
+            reader.onload = function(theData) {
+                var keyId = /AWSAccessKeyId=(\S*)/g.exec(theData.target.result)[1];
+                var key   =   /AWSSecretKey=(\S*)/g.exec(theData.target.result)[1];
+                s3 = new AWS.S3({
+                    logger: console,
+                    region: 'eu-west-1',
+                    maxRetries: 3,
+                    accessKeyId: keyId,
+                    secretAccessKey: key
+                });
+                listWholeBucket(s3, 'felicitywestmacott');
+            };
+            reader.readAsText(files[0]);
+        }
+
+
+
+
+        var context = {};
+
+        function setAttribute(element, key, value) {
+            element.setAttribute(key, value);
+        }
+
+        function append(parent, child) {
+            parent.appendChild(child);
+        }
+
+        function prepend(parent, child) {
+            if (parent.firstChild) {
+                parent.insertBefore(child, parent.firstChild);
+            }
+            else {
+                append(parent, child);
+            }
+        }
+
+        function addElement(parentId, childTag, childId, attributes, addFn) {
+            var parent = document.getElementById(parentId);
+            var newChild = document.createElement(childTag);
+            if (childId) {
+                newChild["id"] = childId;
+            }
+            if (attributes) {
+                for (var property in attributes) {
+                    setAttribute(newChild, property, attributes[property]);
+                }
+            }
+
+            if (addFn) {
+                addFn(parent, newChild);
+            }
+            else {
+                append(parent, newChild);
+            }
+            return newChild;
+        }
+
+        function renameAsPng(filename) {
+            return filename.substring(0, filename.lastIndexOf(".")) + ".png";
+        }
+
+        function clearContainer(initialContext) {
+            context = initialContext;
+            document.getElementById("container").innerHTML = "";
+            listWholeBucket(s3, "felicitywestmacott")
+        }
+
+        function checkFileNames(evt) {
+
+            context.todo = [];
+            var files = evt.target.files;
+            log(files.length + " files selected.");
+            addElement("container", "ul", "list");
+
+            for (var i = 0; i < files.length; i++) {
+                var filename = files[i].name;
+                var message = "";
+                var style = "color: black;";
+                if (!context.uploadRaw) {
+                    filename = context.uploadLocation + renameAsPng(filename);
+                }
+                if (bucketContents[filename]) {
+                    message = " (will overwrite previously uploaded file)";
+                    style = "color: red; font-weight: bold;";
+                }
+                addElement("list", "li", false, { style: style }).innerHTML = filename + message;
+
+                context.todo.push({
+                    file: files[i],
+                    filename: filename,
+                    addBorder: context.addBorder,
+                    uploadRaw: context.uploadRaw
+                });
+            }
+
+            addElement("container", "input", false, {
+                type: "button",
+                value: "Upload"
+            }).addEventListener('click', performUpload, false);
+        }
+
+        function uploadEach(item) {
+
+            if (item.uploadRaw) {
+                s3Upload(item.filename, false, item.file);
+                return;
+            }
+
+            var border = 0;
+            if (item.addBorder) {
+                border = 16;
+            }
+
+            var reader = new FileReader();
+            reader.onload = function(theData) {
+
+                var hiddenImage = addElement("hiddenDiv", "img", false, {});
+                var hiddenCanvas = addElement("hiddenDiv", "canvas", false, {});
+
+                hiddenImage.onload = function() {
+                    var imgWidth = hiddenImage.offsetWidth + border + border;
+                    var imgHeight = hiddenImage.offsetHeight + border + border;
+                    hiddenCanvas.width = imgWidth;
+                    hiddenCanvas.height = imgHeight;
+
+                    var ctx = hiddenCanvas.getContext("2d");
+                    ctx.fillStyle = "#EEEEEE";
+                    ctx.fillRect(0, 0, imgWidth, imgHeight);
+                    ctx.drawImage(hiddenImage, border, border);
+
+                    s3Upload(item.filename, "image/png", dataURItoBlob(hiddenCanvas.toDataURL()));
+                };
+                hiddenImage.setAttribute("src", theData.target.result);
+            };
+            reader.readAsDataURL(item.file);
+        }
+
+        function performUpload() {
+            for (var i = 0; i < context.todo.length; i++) {
+                uploadEach(context.todo[i]);
+            }
+            if (context.clearOnUpload) {
+                clearContainer();
+            }
+        }
+
+        function s3Upload(filename, filetype, filedata) {
+            var params = {
+                Bucket: 'felicitywestmacott',
+                Key: filename,
+                Body: filedata,
+                ACL: 'public-read'
+            };
+
+            if (filetype) {
+                params.ContentType = filetype;
+            }
+
+            s3.putObject(params, function (error, data) {
+                if (error) {
+                    log("Failed to upload " + filename, error);
+                } else {
+                    log("Successfully uploaded " + filename);
+                }
+            });
+        }
+
+        function dataURItoBlob(dataURI) {
+            var binary = atob(dataURI.split(',')[1]);
+            var array = [];
+            for(var i = 0; i < binary.length; i++) {
+                array.push(binary.charCodeAt(i));
+            }
+            return new Blob([new Uint8Array(array)], {type: 'image/png'});
+        }
+
+
+        function redrawDivider() {
+            var text = document.getElementById("dividerText").value;
+            var fontSize = parseInt(document.getElementById("dividerSize").value);
+            var canvas = document.getElementById("dividerCanvas");
+            var imgWidth = canvas.width;
+            var imgHeight = canvas.height;
+
+            console.log(fontSize);
+
+            var ctx = canvas.getContext("2d");
+            ctx.save();
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, imgWidth, imgHeight);
+            ctx.fillStyle = "#808080";
+            ctx.font = " " + fontSize + "px Arial";
+            var textWidth = ctx.measureText(text).width;
+            ctx.rotate(-Math.PI / 2.0);
+            ctx.fillText("1", -50, -50);
+            ctx.fillText(text, (-textWidth - imgHeight) / 2, (imgWidth + (fontSize * 0.75)) / 2);
+            ctx.fillText("3", 50, -50);
+            ctx.fillText("4", 50, 50);
+            ctx.restore();
+
+            var filename = context.uploadLocation + "div" + text + ".png";
+            var message = "";
+            var style = "color: black;";
+            if (bucketContents[filename]) {
+                message = " (will overwrite previously uploaded file)";
+                style = "color: red; font-weight: bold;";
+            }
+
+            document.getElementById("dividerFilename").innerHTML = filename + message;
+            setAttribute(document.getElementById("dividerFilename"), "style", style);
+            setAttribute(document.getElementById("dividerFilename"), "data-filename", filename);
+
+        }
+
+        function uploadDivider() {
+            var filename = document.getElementById("dividerFilename").getAttribute("data-filename");
+            var canvas = document.getElementById("dividerCanvas");
+            s3Upload(filename, "image/png", dataURItoBlob(canvas.toDataURL()));
+        }
+
+        ///////////
+
+        function selectUploadLocation() {
+            context.uploadLocation = document.getElementById("targetLocation").value;
+            document.getElementById("targetLocation").disabled = "disabled";
+            log("Set upload location: " + context.uploadLocation);
+
+            addElement("container", "br");
+            addElement("container", "input", "imageFiles", {
+                type: "file",
+                multiple: ""
+            }).addEventListener('change', checkFileNames, false);
+        }
+
+        function offerUploadLocations() {
+            addElement("container", "span", false, {
+                type: "text"
+            }).innerHTML = "Select upload location: ";
+            addElement("container", "select", "targetLocation", {}).addEventListener('change', selectUploadLocation, false);
+            addElement("targetLocation", "option", false, { value: "/" }).innerHTML = "/";
+            addElement("targetLocation", "option", false, { value: "images/" }).innerHTML = "images/";
+            addElement("targetLocation", "option", false, { value: "graphics/" }).innerHTML = "graphics/";
+        }
+
+        ///////////
+
+        function cancelCurrentOperation() {
+            clearContainer({});
+            log("Cancelled operation.")
+        }
+
+        function uploadImagesWithBorder() {
+            clearContainer({
+                uploadLocation: "bordered/",
+                addBorder: true,
+                uploadRaw: false,
+                clearOnUpload: true
+            });
+            offerUploadLocations();
+        }
+
+        function uploadImages() {
+            clearContainer({
+                uploadLocation: "bordered/",
+                addBorder: false,
+                uploadRaw: false,
+                clearOnUpload: true
+            });
+            offerUploadLocations();
+        }
+
+        function uploadFiles() {
+            clearContainer({
+                uploadLocation: "bordered/",
+                addBorder: false,
+                uploadRaw: true,
+                clearOnUpload: true
+            });
+            offerUploadLocations();
+        }
+
+        function createDivider() {
+            clearContainer({
+                uploadLocation: "graphics/",
+                addBorder: false,
+                uploadRaw: false,
+                clearOnUpload: false
+            });
+            addElement("container", "input", "dividerText", {
+                type: "text",
+                value: "2015...?"
+            }).addEventListener('input', redrawDivider, false);
+            addElement("container", "span", "dividerFilename", {});
+            addElement("container", "br");
+            addElement("container", "input", "dividerSize", {
+                type: "range",
+                value: 65,
+                min: 10,
+                max: 100
+            }).addEventListener('input', redrawDivider, false);
+            addElement("container", "br");
+            addElement("container", "canvas", "dividerCanvas", {
+                width: 80,
+                height: 300,
+                "class": "spaced"
+            });
+            addElement("container", "img", false, {
+                width: 80,
+                height: 300,
+                src: "http://felicitywestmacott.s3-website-eu-west-1.amazonaws.com/graphics/div2014.png",
+                "class": "spaced"
+            });
+            addElement("container", "img", false, {
+                width: 80,
+                height: 300,
+                src: "http://felicitywestmacott.s3-website-eu-west-1.amazonaws.com/graphics/div2013.png",
+                "class": "spaced"
+            });
+            addElement("container", "img", false, {
+                width: 80,
+                height: 300,
+                src: "http://felicitywestmacott.s3-website-eu-west-1.amazonaws.com/graphics/div2012.png",
+                "class": "spaced"
+            });
+            addElement("container", "img", false, {
+                width: 80,
+                height: 300,
+                src: "http://felicitywestmacott.s3-website-eu-west-1.amazonaws.com/graphics/divOlder.png",
+                "class": "spaced"
+            });
+            addElement("container", "br");
+            addElement("container", "input", false, {
+                type: "button",
+                value: "Upload"
+            }).addEventListener('click', uploadDivider, false);
+
+            redrawDivider();
+        }
+
+    </script>
+
+</head>
+<body>
+
+<div class="top">
+    <span id="credentialSpan" style="color: red;">
+        AWS Credentials: <input type="file" id="credentialFile" onchange="handleCredentialSelect(this)"/>
+    </span>
+</div>
+
+<div class="menu">
+    <input type="button" value="Upload Images (adding borders)" onclick="uploadImagesWithBorder()"/>
+    <input type="button" value="Upload Images" onclick="uploadImages()"/>
+    <input type="button" value="Upload Files" onclick="uploadFiles()"/>
+    <input type="button" value="Create Divider" onclick="createDivider()"/>
+    <input type="button" value="Cancel current operation!" onclick="cancelCurrentOperation()" style="color: red;"/>
+</div>
+
+<div id="container"></div>
+
+<div id="log"></div>
+
+<div id="hiddenDiv" class="hideme"></div>
+
+</body>
+</html>
